@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hóa Đơn XML Viewer</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<style>
+:root {
+  --blue: #1F5C99;
+  --blue2: #2A7BD0;
+  --green: #28A745;
+  --red: #DC3545;
+  --orange: #FD7E14;
+  --bg: #1A1D23;
+  --card: #22262F;
+  --border: #2E3340;
+  --text: #E8ECF0;
+  --muted: #7B8494;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Top bar */
+#topbar {
+  background: var(--card);
+  height: 58px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+}
+#topbar h1 { font-size: 18px; font-weight: 700; white-space: nowrap; }
+#stats { margin-left: auto; display: flex; gap: 8px; }
+.stat {
+  min-width: 72px;
+  text-align: center;
+  border-radius: 8px;
+  padding: 5px 10px;
+  color: #fff;
+}
+.stat .lbl { font-size: 10px; opacity: .9; }
+.stat .val { font-size: 14px; font-weight: 700; }
+/* Main layout */
+#content { flex: 1; display: flex; min-height: 0; }
+#sidebar {
+  width: 240px;
+  flex: none;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow-y: auto;
+}
+#sidebar h2 { font-size: 13px; margin: 14px 0 8px; }
+#intro {
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+#intro a {
+  color: #4A9EFF;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.btn {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  height: 38px;
+  margin: 4px 0;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter .15s;
+}
+.btn:hover { filter: brightness(1.15); }
+#fileList { list-style: none; max-height: 160px; overflow-y: auto; }
+#fileList li { font-size: 11px; color: var(--muted); padding: 2px 0; word-break: break-all; }
+#logBox {
+  flex: 1;
+  min-height: 80px;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+/* Main area */
+#main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#statusbar {
+  height: 32px;
+  flex: none;
+  background: var(--card);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+#progressbar { height: 4px; flex: none; background: var(--card); }
+#progressbar .fill { height: 100%; width: 0; background: var(--blue2); transition: width .2s; }
+#tableWrap { flex: 1; overflow: auto; position: relative; }
+table { border-collapse: collapse; width: max-content; min-width: 100%; }
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--blue);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 11px 10px;
+  border: 1px solid var(--border);
+  text-align: center;
+  white-space: nowrap;
+}
+tbody td {
+  font-size: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+tr.hd td { background: #1E2C3E; }
+tr.hd.alt td { background: #182436; }
+tr.bl td { background: #22262F; }
+tr.bl.alt td { background: #1E2229; }
+td.muted { color: var(--muted); }
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+}
+.badge.hd { background: var(--blue); }
+.badge.bl { background: #2D5A1B; }
+#dropZone {
+  border: 2px dashed var(--blue2);
+  border-radius: 10px;
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .2s;
+}
+#dropZone.drag { background: rgba(42,123,208,.15); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>📋 LX600v2 - Phong TCTH - VietinBank Binh Thuan</h1>
+  <div id="stats"></div>
+</div>
+
+<div id="content">
+  <div id="sidebar">
+    <h2>Giới thiệu</h2>
+    <div id="intro">
+      ✨ Chào mừng bạn đến với ứng dụng trích xuất dữ liệu file XML.<br>
+      Ứng dụng viết bởi toanbx-P.TCTH<br>
+      Hỗ trợ: 0902.985.431⭐<br>
+      <a onclick="window.open('https://vietinbank.cn600.website')">🌐 vietinbank.cn600.website</a>
+    </div>
+
+    <button class="btn" style="background:var(--blue);margin-top:12px;" onclick="document.getElementById('fileInput').click()">📜 Chọn file XML</button>
+    <button class="btn" style="background:#2A3040;" onclick="document.getElementById('dirInput').click()">📁 Chọn thư mục</button>
+    <button class="btn" style="background:var(--green);margin-top:12px;" onclick="process()">✅ Xử lý file</button>
+    <button class="btn" style="background:var(--orange);" onclick="exportExcel()">💾 Xuất Excel</button>
+    <button class="btn" style="background:var(--red);" onclick="clearAll()">🗑 Xóa tất cả</button>
+
+    <input id="fileInput" type="file" accept=".xml" multiple class="hidden">
+    <input id="dirInput" type="file" webkitdirectory class="hidden">
+
+    <h2>File đã chọn</h2>
+    <div id="dropZone" onclick="document.getElementById('fileInput').click()">
+      Kéo &amp; thả file XML vào đây<br>hoặc nhấn để chọn file
+    </div>
+    <ul id="fileList"></ul>
+
+    <h2>Nhật ký</h2>
+    <div id="logBox"></div>
+  </div>
+
+  <div id="main">
+    <div id="tableWrap">
+      <table id="dataTable">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="progressbar"><div class="fill" id="progressFill"></div></div>
+    <div id="statusbar"><span id="statusText">Sẵn sàng.</span></div>
+  </div>
+</div>
+
+<script>
+const HEADERS = [
+  "Loại", "Số chứng từ", "Ký hiệu", "Ngày lập",
+  "Tên đơn vị", "MST đơn vị",
+  "Số lít", "Tiền trước thuế", "Tiền thuế", "Tổng tiền",
+  "Thời gian GD", "Nội dung"
+];
+const COL_WIDTHS = [70, 90, 70, 90, 320, 130, 70, 100, 70, 100, 100, 280];
+
+const STATS = [
+  ["Tổng số lít", "0", "#8CD2F7"],
+  ["Trước thuế", "0", "#005B94"],
+  ["Thuế", "0", "#E4537B"],
+  ["Sau thuế", "0", "#D31145"],
+  ["Tiền xăng", "0", "#D31145"],
+  ["Tiền cước", "0", "#D31145"],
+  ["Tổng", "0", "#8CD2F7"],
+  ["Hóa đơn", "0", "#1F5C99"],
+  ["Biên lai", "0", "#E4537B"]
+];
+
+let records = [];
+let selectedFiles = [];
+const statEls = {};
+
+function buildStats() {
+  const wrap = document.getElementById("stats");
+  STATS.forEach(([lbl, val, color], i) => {
+    const div = document.createElement("div");
+    div.className = "stat";
+    div.style.background = color;
+    div.innerHTML = `<div class="lbl">${lbl}</div><div class="val">${val}</div>`;
+    wrap.appendChild(div);
+    statEls[i] = div.querySelector(".val");
+  });
+}
+
+function buildHeader() {
+  const thead = document.querySelector("#dataTable thead");
+  const tr = document.createElement("tr");
+  HEADERS.forEach(h => {
+    const th = document.createElement("th");
+    th.textContent = h;
+    tr.appendChild(th);
+  });
+  thead.appendChild(tr);
+}
+
+function getText(root, path) {
+  const steps = path.replace(/^\.\/\//, "").split("/").filter(Boolean);
+  let nodes = [root];
+  for (const s of steps) {
+    const next = [];
+    for (const n of nodes) {
+      for (const c of n.getElementsByTagName("*")) {
+        if (c.localName === s) next.push(c);
+      }
+    }
+    nodes = next;
+    if (!nodes.length) return "";
+  }
+  return nodes[0].textContent ? nodes[0].textContent.trim() : "";
+}
+
+function findEl(root, name) {
+  for (const c of root.getElementsByTagName("*")) {
+    if (c.localName === name) return c;
+  }
+  return null;
+}
+
+function extractReceiptInfo(description) {
+  const result = { bien_so: "", ma_giao_dich: "", thoi_gian_gd: "" };
+  if (!description) return result;
+  let m = description.match(/phương tiện\s+([A-Z0-9]+)/i);
+  if (m) result.bien_so = m[1];
+  m = description.match(/mã GD\s+(\d+)/i);
+  if (m) result.ma_giao_dich = m[1];
+  m = description.match(/Thời gian giao dịch:\s*([0-9\/:\s]+)/i);
+  if (m) result.thoi_gian_gd = m[1].trim();
+  return result;
+}
+
+function fmtInt(s) {
+  const v = Math.floor(parseFloat(String(s || "0").replace(/,/g, "")) || 0);
+  return v.toLocaleString("en-US");
+}
+
+function readXml(doc) {
+  if (findEl(doc, "SHDon")) {
+    const soLit = parseFloat(getText(doc, ".//SLuong") || 0);
+    let soLitStr = "";
+    if (soLit > 3 && soLit < 100) {
+      soLitStr = soLit.toFixed(3).replace(/,/g, "X").replace(/\./g, ",").replace(/X/g, ".");
+    }
+    const truocThue = getText(doc, ".//TgTCThue") || getText(doc, ".//TgTTTBSo");
+    return {
+      loai: "HOA_DON",
+      so_ct: getText(doc, ".//SHDon"),
+      ky_hieu: getText(doc, ".//KHHDon"),
+      ngay_lap: getText(doc, ".//NLap"),
+      ten_don_vi: getText(doc, ".//NBan/Ten"),
+      mst: getText(doc, ".//NBan/MST"),
+      so_lit: soLitStr,
+      tien_truoc_thue: fmtInt(truocThue),
+      tien_thue: fmtInt(getText(doc, ".//TgTThue")),
+      tong_tien: fmtInt(getText(doc, ".//TgTTTBSo")),
+      thoi_gian_gd: "",
+      noi_dung: getText(doc, ".//THHDVu")
+    };
+  } else if (findEl(doc, "SCTu")) {
+    const noiDung = getText(doc, ".//TLPhi");
+    const extra = extractReceiptInfo(noiDung);
+    return {
+      loai: "BIEN_LAI",
+      so_ct: getText(doc, ".//SCTu"),
+      ky_hieu: getText(doc, ".//KHCTu"),
+      ngay_lap: getText(doc, ".//NLap"),
+      ten_don_vi: getText(doc, ".//TTCThu"),
+      mst: getText(doc, ".//TCTPhi/MST"),
+      so_lit: "",
+      hanghoa: "",
+      tien_truoc_thue: fmtInt(getText(doc, ".//STien")),
+      tien_thue: "",
+      tong_tien: fmtInt(getText(doc, ".//STien")),
+      thoi_gian_gd: extra.thoi_gian_gd,
+      noi_dung: noiDung
+    };
+  }
+  throw new Error("Không nhận dạng được định dạng XML");
+}
+
+function addFiles(files) {
+  let added = 0;
+  files.forEach(f => {
+    if (!selectedFiles.some(x => x.name === f.name && x.size === f.size)) {
+      selectedFiles.push(f);
+      added++;
+    }
+  });
+  refreshFileList();
+  log(`Đã thêm ${added} file. Tổng: ${selectedFiles.length} file.`);
+}
+
+function refreshFileList() {
+  const ul = document.getElementById("fileList");
+  ul.innerHTML = "";
+  selectedFiles.forEach(f => {
+    const li = document.createElement("li");
+    li.textContent = "📄 " + f.name;
+    ul.appendChild(li);
+  });
+}
+
+document.getElementById("fileInput").addEventListener("change", e => {
+  addFiles(Array.from(e.target.files));
+  e.target.value = "";
+});
+document.getElementById("dirInput").addEventListener("change", e => {
+  const files = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith(".xml"));
+  addFiles(files);
+  e.target.value = "";
+});
+
+const dropZone = document.getElementById("dropZone");
+["dragover", "dragenter"].forEach(ev => dropZone.addEventListener(ev, e => {
+  e.preventDefault();
+  dropZone.classList.add("drag");
+}));
+["dragleave", "drop"].forEach(ev => dropZone.addEventListener(ev, e => {
+  e.preventDefault();
+  dropZone.classList.remove("drag");
+}));
+dropZone.addEventListener("drop", e => {
+  const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith(".xml"));
+  addFiles(files);
+});
+
+function process() {
+  if (!selectedFiles.length) {
+    alert("Vui lòng chọn file XML trước.");
+    return;
+  }
+  setStatus("Đang xử lý...", "#FD7E14");
+  setProgress(0);
+
+  const out = [];
+  const existing = new Set();
+  let errors = 0;
+  let done = 0;
+  const n = selectedFiles.length;
+
+  selectedFiles.forEach(f => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const doc = new DOMParser().parseFromString(reader.result, "text/xml");
+        if (doc.querySelector("parsererror")) throw new Error("XML không hợp lệ");
+        const data = readXml(doc);
+        const key = data.so_ct + "_" + data.ky_hieu;
+        if (existing.has(key)) {
+          log("⚠ Trùng lặp: " + f.name);
+        } else {
+          out.push(data);
+          existing.add(key);
+          log("✓ " + f.name);
+        }
+      } catch (err) {
+        errors++;
+        log("✗ " + f.name + ": " + err.message);
+      }
+      done++;
+      setProgress(done / n);
+      if (done === n) finishProcess(out, errors);
+    };
+    reader.onerror = () => {
+      errors++;
+      log("✗ " + f.name + ": lỗi đọc file");
+      done++;
+      setProgress(done / n);
+      if (done === n) finishProcess(out, errors);
+    };
+    reader.readAsText(f);
+  });
+}
+
+function finishProcess(processed, errors) {
+  records = processed.slice().sort((a, b) => {
+    if (!a.mst && !b.mst) return 0;
+    if (!a.mst) return 1;
+    if (!b.mst) return -1;
+    return a.mst.localeCompare(b.mst, undefined, { numeric: true });
+  });
+  log("↕ Đã tự sắp xếp theo MST đơn vị.");
+
+  function toFloat(s) {
+    if (!s) return 0.0;
+    const cleaned = String(s).replace(/,/g, "").replace(/ /g, "");
+    const v = parseFloat(cleaned);
+    return isNaN(v) ? 0.0 : v;
+  }
+  function fmtNum(v) {
+    return Math.round(v).toLocaleString("en-US").replace(/,/g, ".");
+  }
+
+  const tongLit = processed.reduce((s, r) => s + toFloat(r.so_lit), 0) / 1000;
+  const tongTruoc = processed.reduce((s, r) => s + toFloat(r.tien_truoc_thue), 0);
+  const tongThue = processed.reduce((s, r) => s + toFloat(r.tien_thue), 0);
+  const tongSau = processed.reduce((s, r) => s + toFloat(r.tong_tien), 0);
+  const tienXang = processed.reduce((s, r) => s + (toFloat(r.so_lit) > 1 ? toFloat(r.tong_tien) : 0), 0);
+  const tienCuoc = tongSau - tienXang;
+
+  renderTable(records);
+
+  const hd = records.filter(r => r.loai === "HOA_DON").length;
+  const bl = records.length - hd;
+  statEls[6].textContent = records.length;
+  statEls[7].textContent = hd;
+  statEls[8].textContent = bl;
+  statEls[0].textContent = fmtNum(tongLit);
+  statEls[1].textContent = fmtNum(tongTruoc);
+  statEls[2].textContent = fmtNum(tongThue);
+  statEls[3].textContent = fmtNum(tongSau);
+  statEls[4].textContent = fmtNum(tienXang);
+  statEls[5].textContent = fmtNum(tienCuoc);
+
+  let msg = `Hoàn thành: ${processed.length} bản ghi`;
+  if (errors) msg += `  |  ${errors} lỗi`;
+  setStatus(msg, errors ? "#FD7E14" : "#28A745");
+  setTimeout(() => setProgress(0), 2000);
+}
+
+function renderTable(recs) {
+  const tbody = document.querySelector("#dataTable tbody");
+  tbody.innerHTML = "";
+  recs.forEach((d, r) => {
+    const rowData = [
+      d.loai, d.so_ct, d.ky_hieu, d.ngay_lap,
+      d.ten_don_vi, d.mst,
+      d.so_lit, d.tien_truoc_thue, d.tien_thue, d.tong_tien,
+      d.thoi_gian_gd, d.noi_dung
+    ];
+    const isHd = d.loai === "HOA_DON";
+    const tr = document.createElement("tr");
+    tr.className = (isHd ? "hd" : "bl") + (r % 2 === 1 ? " alt" : "");
+    rowData.forEach((val, c) => {
+      const td = document.createElement("td");
+      td.title = val || "";
+      if (c === 0) {
+        const badge = document.createElement("span");
+        badge.className = "badge " + (isHd ? "hd" : "bl");
+        badge.textContent = isHd ? "📄 HĐ" : "🧾 BL";
+        td.appendChild(badge);
+      } else {
+        td.textContent = val || "—";
+        if (!val) td.classList.add("muted");
+      }
+      td.style.maxWidth = COL_WIDTHS[c] > 100 ? COL_WIDTHS[c] + "px" : "";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+function exportExcel() {
+  if (!records.length) {
+    alert("Hãy xử lý file XML trước khi xuất.");
+    return;
+  }
+  const rows = [HEADERS];
+  records.forEach(d => rows.push([
+    d.loai, d.so_ct, d.ky_hieu, d.ngay_lap,
+    d.ten_don_vi, d.mst,
+    d.so_lit, d.tien_truoc_thue, d.tien_thue, d.tong_tien,
+    d.thoi_gian_gd, d.noi_dung
+  ]));
+
+  if (typeof XLSX !== "undefined") {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Dữ liệu hóa đơn");
+    ws["!cols"] = COL_WIDTHS.map(w => ({ wch: Math.max(8, Math.round(w / 6)) }));
+    XLSX.writeFile(wb, "invoices_output.xlsx");
+  } else {
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "invoices_output.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  log("💾 Đã xuất: invoices_output.xlsx");
+  setStatus("Đã lưu file Excel", "#28A745");
+}
+
+function clearAll() {
+  records = [];
+  selectedFiles = [];
+  refreshFileList();
+  document.querySelector("#dataTable tbody").innerHTML = "";
+  for (let i = 0; i < 9; i++) statEls[i].textContent = "0";
+  setStatus("Đã xóa.", "#7B8494");
+  log("— Đã xóa toàn bộ —");
+}
+
+function log(msg) {
+  const box = document.getElementById("logBox");
+  box.textContent += msg + "\n";
+  box.scrollTop = box.scrollHeight;
+}
+
+function setStatus(msg, color) {
+  const el = document.getElementById("statusText");
+  el.textContent = msg;
+  el.style.color = color;
+}
+
+function setProgress(p) {
+  document.getElementById("progressFill").style.width = (p * 100) + "%";
+}
+
+buildStats();
+buildHeader();
+</script>
+</body>
+</html>
